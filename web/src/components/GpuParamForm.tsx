@@ -1,6 +1,7 @@
-import { useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import type { GalleryAsset, GpuManifest, GpuParameter } from '../lib/gpu-api';
 import { friendlyHint, friendlyLabel, MODE_HELP, modeHelp } from '../lib/labels';
+import { AssetSlotPicker } from './AssetSlotPicker';
 import { InfoTip } from './ui';
 import styles from '../gpu.module.css';
 
@@ -12,7 +13,7 @@ type Props = {
   assets: GalleryAsset[];
   uploadProgress: Record<string, number>;
   onChange: (key: string, value: unknown) => void;
-  onUpload: (file: File) => Promise<void>;
+  onUpload: (file: File) => Promise<GalleryAsset | undefined | void>;
   /** 已由别处处理的字段（提示词、宽高），这里不再渲染，避免重复。 */
   excludeKeys?: string[];
   /** assets=素材文件；options=常用选项（时长/模式等，直接展示）；advanced=其余全部（默认折叠）。 */
@@ -86,7 +87,6 @@ export function splitParams(manifest: GpuManifest | null | undefined, excludeKey
 }
 
 export function GpuParamForm({ manifest, values, assets, uploadProgress, onChange, onUpload, excludeKeys = [], section }: Props) {
-  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const entries = useMemo(() => splitParams(manifest, excludeKeys)[section], [manifest, excludeKeys, section]);
   if (!entries.length) return null;
 
@@ -146,29 +146,20 @@ export function GpuParamForm({ manifest, values, assets, uploadProgress, onChang
             onChange={(e) => onChange(key, e.target.value === '' ? '' : parameter.type === 'integer' ? Number.parseInt(e.target.value, 10) : Number(e.target.value))}
           />
         ) : widget === 'file' ? (
-          <div className={styles.fileControl}>
-            <select id={`gpu-${key}`} value={String(current ?? '')} onChange={(e) => onChange(key, e.target.value)}>
-              <option value="">从素材库选择…</option>
-              {assets
-                .filter((asset) => !parameter.type || parameter.type === 'file' || asset.mime.startsWith(`${parameter.type}/`))
-                .map((asset) => <option key={asset.id} value={asset.id}>{asset.filename || asset.id}</option>)}
-            </select>
-            <button type="button" className="button secondary" onClick={() => inputRefs.current[key]?.click()}>上传</button>
-            <input
-              ref={(node) => { inputRefs.current[key] = node; }}
-              type="file"
-              hidden
-              accept={parameter.type === 'image' ? 'image/*' : parameter.type === 'video' ? 'video/*' : undefined}
-              onChange={async (event) => {
-                const file = event.target.files?.[0];
-                if (file) await onUpload(file);
-                event.target.value = '';
-              }}
-            />
-            {Object.entries(uploadProgress).map(([name, progress]) => (
-              <small className={styles.hint} key={name}>正在上传 {name}：{progress}%</small>
-            ))}
-          </div>
+          <AssetSlotPicker
+            id={`gpu-${key}`}
+            assets={assets.filter((asset) => !parameter.type || parameter.type === 'file' || asset.mime.startsWith(`${parameter.type}/`))}
+            value={String(current ?? '')}
+            onChange={(assetId) => onChange(key, assetId)}
+            onUpload={async (file) => {
+              const uploaded = await onUpload(file);
+              if (uploaded) onChange(key, uploaded.id);
+            }}
+            uploadProgress={uploadProgress}
+            accept={parameter.type === 'image' ? 'image/*' : parameter.type === 'video' ? 'video/*' : undefined}
+            placeholder="从素材库选择…"
+            required={Boolean(parameter.required)}
+          />
         ) : (
           <input id={`gpu-${key}`} type="text" value={String(current ?? '')} onChange={(e) => onChange(key, e.target.value)} />
         )}

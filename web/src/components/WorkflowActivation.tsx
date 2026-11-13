@@ -11,6 +11,7 @@ import {
 } from '../lib/activation-resume';
 import { resolveGpuCheckRequest, selectEligibleColabGpuSpec } from '../lib/colab-check';
 import styles from '../gpu.module.css';
+import { AssetSlotPicker } from './AssetSlotPicker';
 import { JobHistoryDetails, type JobHistoryDetailRecord } from './JobHistoryDetails';
 
 const STEPS_POLL_MS = 6000;
@@ -61,7 +62,6 @@ export function WorkflowActivationPanel({
   const aliveRef = useRef(false);
   const executionRef = useRef(0);
   const runningRef = useRef(false);
-  const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const onWatchRef = useRef(onWatch);
   onWatchRef.current = onWatch;
 
@@ -337,26 +337,18 @@ export function WorkflowActivationPanel({
               <div className={styles.paramLabel}>
                 <label htmlFor={`activation-${input.key}`}>{input.label}{input.required ? '（必填）' : '（可选）'}</label>
               </div>
-              <div className={styles.fileControl}>
-                <select id={`activation-${input.key}`} value={inputs[input.key] || ''} onChange={(event) => setInputs((current) => ({ ...current, [input.key]: event.target.value }))}>
-                  <option value="">{input.required ? '请选择或上传图片' : '不使用'}</option>
-                  {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.filename || asset.id}</option>)}
-                </select>
-                <button className="button secondary small" type="button" disabled={uploading === input.key} onClick={() => fileRefs.current[input.key]?.click()}>
-                  {uploading === input.key ? '上传中…' : '上传'}
-                </button>
-                <input
-                  ref={(node) => { fileRefs.current[input.key] = node; }}
-                  hidden
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) void uploadFor(input, file);
-                    event.target.value = '';
-                  }}
-                />
-              </div>
+              <AssetSlotPicker
+                id={`activation-${input.key}`}
+                assets={assets}
+                value={inputs[input.key] || ''}
+                onChange={(assetId) => setInputs((current) => ({ ...current, [input.key]: assetId }))}
+                onUpload={(file) => uploadFor(input, file)}
+                uploading={uploading === input.key}
+                accept="image/png,image/jpeg,image/webp"
+                placeholder={input.required ? '请选择或上传图片' : '不使用'}
+                required={input.required}
+                compact
+              />
               {input.description ? <span className={styles.hint}>{input.description}</span> : null}
             </div>
           ))}

@@ -68,7 +68,7 @@ export function CreatePanel({
   selectedAssets: string[];
   setSelectedAssets: (value: string[]) => void;
   uploadProgress: Record<string, number>;
-  onUpload: (file: File) => Promise<void>;
+  onUpload: (file: File) => Promise<GalleryAsset | undefined | void>;
   modelId: string;
   setModelId: (value: string) => void;
   workflowId: string;
@@ -296,7 +296,7 @@ export function CreatePanel({
         <Card icon={<ImageIcon size={17} strokeWidth={1.6} aria-hidden />} title="参考素材">
           <GpuParamForm section="assets" manifest={manifest} values={params} assets={gallery} uploadProgress={uploadProgress}
             onChange={(k, v) => setParams({ ...params, [k]: v })} onUpload={onUpload} excludeKeys={excluded} />
-          <ReferencePicker manifest={manifest} assets={gallery} selected={selectedAssets} onChange={setSelectedAssets} onUpload={onUpload} />
+          <ReferencePicker manifest={manifest} assets={gallery} selected={selectedAssets} onChange={setSelectedAssets} onUpload={async (file) => { await onUpload(file); }} />
         </Card>
       )}
 

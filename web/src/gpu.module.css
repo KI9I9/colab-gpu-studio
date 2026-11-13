@@ -280,3 +280,186 @@
 .notice { padding: 10px 12px; border: 1px solid var(--line); }
 .errorText { font-size: 13px; color: #a63b32; }
 .checkline { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+
+/* 参考图槽位可视化选择器与预览 */
+.assetSlotWrap { display: grid; gap: 8px; }
+.assetSelectedCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--card-2);
+}
+.assetSelectedThumbBtn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  flex: none;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.assetSelectedThumb {
+  display: block;
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+.assetSelectedThumbPlaceholder {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+}
+.assetSelectedMeta {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.assetSelectedMeta strong {
+  font-size: 0.84rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assetSelectedMeta small {
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assetSelectedActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.assetPickerGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 8px;
+  max-height: 296px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+}
+.assetPickerTile {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  overflow: hidden;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.assetPickerTile[data-selected="true"] {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 24%, transparent);
+}
+.assetPickerSelectBtn {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 0 0 6px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.assetPickerMedia {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--card-2);
+  overflow: hidden;
+}
+.assetPickerMedia img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.assetPickerMedia .assetSelectedThumbPlaceholder {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+.assetIndexBadge {
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(15, 18, 24, 0.72);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.assetSelectedBadge {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.assetTileTitle {
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assetTileSub {
+  padding: 0 6px;
+  font-size: 10px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assetZoomBtn {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  background: rgba(15, 18, 24, 0.68);
+  color: #fff;
+  cursor: pointer;
+}
+.assetZoomBtn:hover {
+  background: rgba(15, 18, 24, 0.9);
+}
+.assetDialogFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}

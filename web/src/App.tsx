@@ -489,19 +489,21 @@ export default function App() {
     }
   }
 
-  async function handleUpload(file: File) {
+  async function handleUpload(file: File): Promise<GalleryAsset | undefined> {
     const uploadProjectId = projectId;
-    if (!uploadProjectId) return;
+    if (!uploadProjectId) return undefined;
     setUploadProgress((curr) => ({ ...curr, [file.name]: 0 }));
     try {
       const asset = await uploadAsset(uploadProjectId, file, (progress) => {
         if (currentProjectId.current === uploadProjectId) setUploadProgress((curr) => ({ ...curr, [file.name]: progress }));
       });
-      if (currentProjectId.current !== uploadProjectId || asset.project_id !== uploadProjectId) return;
+      if (currentProjectId.current !== uploadProjectId || asset.project_id !== uploadProjectId) return undefined;
       setReferenceImages((curr) => [asset, ...curr.filter((item) => item.id !== asset.id)]);
       setSelectedAssets((curr) => [...new Set([...curr, asset.id])]);
+      return asset;
     } catch (cause) {
       if (currentProjectId.current === uploadProjectId) setError(`上传 ${file.name}：${apiMessage(cause)}`);
+      return undefined;
     } finally {
       if (currentProjectId.current === uploadProjectId) setUploadProgress((curr) => {
         const next = { ...curr };
