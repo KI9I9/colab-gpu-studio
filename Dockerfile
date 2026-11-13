@@ -2,6 +2,8 @@ FROM node:22-alpine AS web
 WORKDIR /web
 COPY web/package*.json ./
 RUN npm ci
+ARG GIT_SHA=""
+ENV VITE_GIT_SHA=${GIT_SHA}
 COPY web/ ./
 RUN npm run build
 
@@ -10,6 +12,8 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/app/api
 WORKDIR /app
 COPY requirements.lock ./
 RUN pip install --no-cache-dir -r requirements.lock
+ARG GIT_SHA=""
+ENV STUDIO_GIT_SHA=${GIT_SHA}
 COPY api/ ./api/
 COPY scripts/ ./scripts/
 COPY migrations/ ./migrations/

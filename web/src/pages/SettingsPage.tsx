@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Settings, ChevronLeft, ChevronRight, Monitor, Gauge, Plug, Cpu, Layers, LogOut, Search, Square } from 'lucide-react';
 import { WorkflowsPanel } from './WorkflowManager';
 import { ThemePicker } from './ComputePage';
-import type { ComputeSpec, GpuSettings, GpuUsage, GpuWorkflow } from '../lib/gpu-api';
+import { getStudioHealth, type ComputeSpec, type GpuSettings, type GpuUsage, type GpuWorkflow } from '../lib/gpu-api';
 import { GoogleOAuthSetup } from '../components/GoogleOAuthSetup';
 import { AccountDirectory, type GpuAccount } from '../components/AccountDirectory';
 import { InstanceCenter } from '../components/InstanceCenter';
@@ -11,6 +11,8 @@ import { ComputeSpecs } from '../components/ComputeSpecs';
 import { Card } from '../components/ui';
 import styles from '../gpu.module.css';
 import { cuNumber } from '../lib/ui-helpers';
+
+const BUILD_GIT_SHA = String((import.meta as { env?: Record<string, unknown> }).env?.VITE_GIT_SHA || '').trim().slice(0, 7);
 
 export function SettingsPanel({
   settings, usage, specs, specsNote = '', workflows, loading, error, accounts = [], onAccountsChange, instances = [], onRefreshInstances,
@@ -47,6 +49,23 @@ export function SettingsPanel({
 }) {
   const [view, setView] = useState<'main' | 'workflows'>('main');
   const [oauthConfigured, setOauthConfigured] = useState(false);
+  const [versionInfo, setVersionInfo] = useState<{ version: string; gitSha: string }>({ version: '', gitSha: BUILD_GIT_SHA });
+
+  useEffect(() => {
+    let alive = true;
+    getStudioHealth()
+      .then((info) => {
+        if (!alive) return;
+        const sha = typeof info?.git_sha === 'string' ? info.git_sha.trim().slice(0, 7) : '';
+        const ver = typeof info?.version === 'string' ? info.version.trim() : '';
+        setVersionInfo((prev) => ({
+          version: ver || prev.version,
+          gitSha: sha || prev.gitSha,
+        }));
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
 
   const activeCount = Number(usage?.active_runtimes ?? 0);
   const dailyCap = Number(usage?.daily_limit || settings?.budget?.daily_units || 0);
@@ -120,6 +139,16 @@ export function SettingsPanel({
 
       <button className="button secondary big" type="button" onClick={onLogout}><LogOut size={17} strokeWidth={1.6} aria-hidden />退出登录</button>
       {error && <p className="status error" role="alert">{error}</p>}
+      <footer className={styles.versionFooter} aria-label="系统版本信息">
+        <span>Colab GPU Studio</span>
+        <code>v{versionInfo.version || '0.3.1'}</code>
+        {versionInfo.gitSha ? (
+          <>
+            <span aria-hidden>·</span>
+            <code>git {versionInfo.gitSha}</code>
+          </>
+        ) : null}
+      </footer>
     </div>
   );
 }

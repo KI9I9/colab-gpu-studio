@@ -346,3 +346,12 @@ export function createGpuBatch(jobs: GpuJobRequest[], mode: 'save'|'smart'|'batc
 }
 
 export const retryGpuAttempt = (id: string, key: string) => apiFetch<GpuJob>(`/api/gpu/jobs/${encodeURIComponent(id)}/attempts`, { method: "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify({}) });
+
+export interface StudioHealth {
+  status: string;
+  version: string;
+  git_sha?: string;
+  application?: string;
+  independent?: boolean;
+}
+export const getStudioHealth = () => apiFetch<StudioHealth>('/api/health');

@@ -463,3 +463,22 @@
   gap: 10px;
   flex-wrap: wrap;
 }
+.versionFooter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 0 4px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.versionFooter code {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--text-2);
+}

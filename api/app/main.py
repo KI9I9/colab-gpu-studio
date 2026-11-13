@@ -208,13 +208,57 @@ async def internal_error(request, exc):
     return error_response(request, APIError("INTERNAL_ERROR", "后台操作失败，请查看已脱敏的任务事件", 500))
 
 
+def _resolve_git_sha() -> str:
+    """Resolve the short Git commit SHA from build env, deployment metadata, or .git."""
+    env_sha = os.environ.get("STUDIO_GIT_SHA", "").strip()
+    if env_sha:
+        return env_sha[:7]
+    repo_root = Path(__file__).resolve().parents[2]
+    for rev_file in (Path("/app/DEPLOYED_REVISION.txt"), repo_root / "DEPLOYED_REVISION.txt"):
+        try:
+            for line in rev_file.read_text(encoding="utf-8").splitlines():
+                if line.startswith("commit="):
+                    val = line.split("=", 1)[1].strip()
+                    if val:
+                        return val[:7]
+        except OSError:
+            pass
+    git_dir = repo_root / ".git"
+    try:
+        head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+        if head.startswith("ref: "):
+            ref = head[5:].strip()
+            ref_file = git_dir / ref
+            if ref_file.is_file():
+                return ref_file.read_text(encoding="utf-8").strip()[:7]
+            packed = git_dir / "packed-refs"
+            if packed.is_file():
+                for line in packed.read_text(encoding="utf-8").splitlines():
+                    if not line or line.startswith(("#", "^")):
+                        continue
+                    parts = line.split(" ", 1)
+                    if len(parts) == 2 and parts[1].strip() == ref:
+                        return parts[0].strip()[:7]
+        elif head:
+            return head[:7]
+    except OSError:
+        pass
+    return ""
+
+
+_GIT_SHA = _resolve_git_sha()
+
+
 @app.get("/api/health")
 def health(st=Depends(get_store)):
     from sqlalchemy import text
 
     with st.engine.connect() as connection:
         connection.execute(text("SELECT 1"))
-    return {"status": "ok", "version": __version__, "application": "colab-gpu-studio", "independent": True}
+    payload = {"status": "ok", "version": __version__, "application": "colab-gpu-studio", "independent": True}
+    if _GIT_SHA:
+        payload["git_sha"] = _GIT_SHA
+    return payload
 
 
 class Login(BaseModel):
