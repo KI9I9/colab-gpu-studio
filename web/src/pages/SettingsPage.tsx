@@ -72,6 +72,8 @@ export function SettingsPanel({
   const used = Number(usage?.actual_units || usage?.estimated_units || 0);
   const pct = dailyCap > 0 ? Math.min(100, Math.round((used / dailyCap) * 100)) : 0;
   const familyCount = new Set(workflows.map((w) => w.workflow_key)).size;
+  const realEnabled = Boolean(settings?.real_enabled) && settings?.offline_mode !== true;
+  const retentionUnlocked = Boolean(settings?.real_retention_verified);
 
   if (view === 'workflows') {
     return (
@@ -118,7 +120,20 @@ export function SettingsPanel({
         )}
       </Card>
 
-      <Card icon={<Cpu size={17} strokeWidth={1.6} aria-hidden />} title="GPU">
+      <Card
+        icon={<Cpu size={17} strokeWidth={1.6} aria-hidden />}
+        title="GPU"
+        aside={
+          settings ? (
+            <span
+              className={`pill ${realEnabled && retentionUnlocked ? 'solid' : ''}`}
+              title="只读状态：由服务端环境变量 GPU_REAL_RETENTION_VERIFIED 控制"
+            >
+              {retentionUnlocked ? '保留复用：已解锁' : '保留复用：未解锁'}
+            </span>
+          ) : undefined
+        }
+      >
         <div className={styles.twoButtons}>
           <button className="button" style={{ flex: 1 }} disabled={loading === 'check'} type="button" onClick={onCheck}>
             <Search size={15} strokeWidth={1.8} aria-hidden />{loading === 'check' ? '检查中…' : '检查可用 GPU'}

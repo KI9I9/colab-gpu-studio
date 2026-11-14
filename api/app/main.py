@@ -764,11 +764,16 @@ def get_settings(request: Request, user=Depends(current_user), st=Depends(get_st
     from .gpu.google import GoogleService
 
     cfg = GpuConfig.from_env()
+    retention_verified = (
+        os.getenv("GPU_REAL_RETENTION_VERIFIED") == "1"
+        or os.getenv("GPU_REAL_RETENTION_TEST_ENABLED") == "1"
+    )
     return ok(
         {
             "offline_mode": os.getenv("STUDIO_OFFLINE_TEST") == "1",
             "provider_default": "mock",
             "real_enabled": cfg.real_enabled,
+            "real_retention_verified": retention_verified,
             "google": GoogleService(Repository(st), user["id"]).status(),
             "budget": usage(st, user["id"]),
             "storage": os.getenv("GPU_STORAGE", "local"),

@@ -30,6 +30,7 @@ export function ComputePage({
 }) {
   const [open, setOpen] = useState<string>('');
   const realEnabled = Boolean(settings?.real_enabled) && settings?.offline_mode !== true;
+  const retentionUnlocked = Boolean(settings?.real_retention_verified);
   const activeCount = Number(usage?.active_runtimes ?? 0);
   const estimated = usage?.estimated_units;
   const actual = usage?.actual_units;
@@ -44,7 +45,23 @@ export function ComputePage({
         <p className="muted small">任务在后台运行，关掉手机也不会中断，回来再看就行。</p>
       </div>
 
-      <Card icon={<Monitor size={17} strokeWidth={1.6} aria-hidden />} title="当前环境" aside={<span className={`pill ${realEnabled ? 'solid' : ''}`}>{realEnabled ? '真实 GPU' : '模拟模式'}</span>}>
+      <Card
+        icon={<Monitor size={17} strokeWidth={1.6} aria-hidden />}
+        title="当前环境"
+        aside={
+          <>
+            {realEnabled && (
+              <span
+                className="pill"
+                title="只读状态：由服务端环境变量 GPU_REAL_RETENTION_VERIFIED 控制"
+              >
+                {retentionUnlocked ? '保留复用：已解锁' : '保留复用：未解锁'}
+              </span>
+            )}
+            <span className={`pill ${realEnabled ? 'solid' : ''}`}>{realEnabled ? '真实 GPU' : '模拟模式'}</span>
+          </>
+        }
+      >
         <p className="muted small">{realEnabled ? '任务会在 Google Colab 的 GPU 上真实运行。' : '现在是本地模拟，不会连接 Colab，也不会扣 CU。'}</p>
         <div className={styles.triple}>
           <div><small className="muted">真实 GPU</small><strong>{realEnabled ? '已启用' : '未启用'}</strong></div>

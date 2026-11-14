@@ -70,3 +70,17 @@ def test_real_batch_blocked_when_offline_or_wrong_mode(monkeypatch, tmp_path):
     r = c.post("/api/gpu/batches", json=_body("smart"), headers={"Idempotency-Key": "k"})
     assert r.status_code == 503
     assert r.json()['error']['code'] == 'REAL_LIFECYCLE_UNVERIFIED'
+
+
+def test_settings_reports_real_retention_verified(monkeypatch, tmp_path):
+    monkeypatch.delenv("GPU_REAL_RETENTION_VERIFIED", raising=False)
+    monkeypatch.delenv("GPU_REAL_RETENTION_TEST_ENABLED", raising=False)
+    c = client(tmp_path)
+    assert c.get("/api/gpu/settings").json()["data"]["real_retention_verified"] is False
+
+    monkeypatch.setenv("GPU_REAL_RETENTION_VERIFIED", "1")
+    assert c.get("/api/gpu/settings").json()["data"]["real_retention_verified"] is True
+
+    monkeypatch.delenv("GPU_REAL_RETENTION_VERIFIED")
+    monkeypatch.setenv("GPU_REAL_RETENTION_TEST_ENABLED", "1")
+    assert c.get("/api/gpu/settings").json()["data"]["real_retention_verified"] is True

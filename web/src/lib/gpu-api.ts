@@ -113,7 +113,7 @@ export interface GpuUsage {
   };
   [key: string]: unknown;
 }
-export interface GpuSettings { provider_default?: Provider; real_enabled?: boolean; google?: { colab?: { connected?: boolean; configured?: boolean; scopes?: string[] }; drive?: { connected?: boolean; configured?: boolean; scopes?: string[] } }; budget?: Record<string, unknown>; storage?: string; [key: string]: unknown; }
+export interface GpuSettings { offline_mode?: boolean; provider_default?: Provider; real_enabled?: boolean; real_retention_verified?: boolean; google?: { colab?: { connected?: boolean; configured?: boolean; scopes?: string[] }; drive?: { connected?: boolean; configured?: boolean; scopes?: string[] } }; budget?: Record<string, unknown>; storage?: string; [key: string]: unknown; }
 export interface ComputeSpec {
   id?: string;
   name?: string;

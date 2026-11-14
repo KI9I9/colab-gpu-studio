@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { build } from 'esbuild';
 
 const root = join(process.cwd(), 'src');
 const read = (name) => readFileSync(join(root, name), 'utf8');
@@ -53,4 +55,106 @@ test('jobs render machine history and only expose retention action through callb
   assert.match(source, /onRetain\?:/);
   assert.match(source, /onInstance\?:/);
   assert.match(source, /key=\{jobKey\}/);
+});
+
+test('settings and compute render read-only real retention verification badge', async () => {
+  const apiTypes = read('lib/gpu-api.ts');
+  assert.match(apiTypes, /real_retention_verified\?: boolean/);
+
+  const { outputFiles } = await build({
+    stdin: {
+      contents: `
+        import { createElement } from 'react';
+        import { renderToStaticMarkup } from 'react-dom/server';
+        import { SettingsPanel } from './src/pages/SettingsPage';
+        import { ComputePage } from './src/pages/ComputePage';
+
+        export function renderSettings(settings) {
+          return renderToStaticMarkup(createElement(SettingsPanel, {
+            settings,
+            usage: null,
+            specs: [],
+            workflows: [],
+            loading: '',
+            error: '',
+            onConnect() {},
+            onDisconnect() {},
+            onCheck() {},
+            onStop() {},
+            onImport() {},
+            onValidate() {},
+            onPublish() {},
+            onRollback() {},
+            onLogout() {},
+          }));
+        }
+
+        export function renderCompute(settings) {
+          return renderToStaticMarkup(createElement(ComputePage, {
+            settings,
+            usage: null,
+          }));
+        }
+      `,
+      resolveDir: process.cwd(),
+      loader: 'tsx',
+    },
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    define: {
+      'import.meta.env.VITE_API_BASE_URL': '""',
+      'import.meta.env.VITE_GIT_SHA': '""',
+    },
+    write: false,
+    outfile: 'retention-badge-check.cjs',
+    external: ['react', 'react-dom/server'],
+    loader: { '.css': 'empty' },
+  });
+
+  const mod = { exports: {} };
+  new Function('require', 'module', 'exports', outputFiles[0].text)(
+    createRequire(import.meta.url),
+    mod,
+    mod.exports,
+  );
+  const { renderSettings, renderCompute } = mod.exports;
+  const prevStorage = globalThis.localStorage;
+  const prevWindow = globalThis.window;
+  globalThis.localStorage = {
+    getItem() { return 'dark'; },
+    setItem() {},
+    removeItem() {},
+  };
+  globalThis.window = {
+    location: { origin: 'https://studio.example.test' },
+  };
+
+  try {
+    const unlockedReal = { real_enabled: true, real_retention_verified: true };
+    const unlockedSettingsHtml = renderSettings(unlockedReal);
+    const unlockedComputeHtml = renderCompute(unlockedReal);
+    assert.match(unlockedSettingsHtml, /保留复用：已解锁/);
+    assert.match(unlockedSettingsHtml, /class="pill solid"/);
+    assert.match(unlockedComputeHtml, /保留复用：已解锁/);
+    assert.match(unlockedComputeHtml, /真实 GPU/);
+
+    const lockedReal = { real_enabled: true, real_retention_verified: false };
+    assert.match(renderSettings(lockedReal), /保留复用：未解锁/);
+    assert.doesNotMatch(renderSettings(lockedReal), /class="pill solid"/);
+    assert.match(renderCompute(lockedReal), /保留复用：未解锁/);
+
+    const mockSettings = { real_enabled: false, real_retention_verified: false };
+    const mockSettingsHtml = renderSettings(mockSettings);
+    const mockComputeHtml = renderCompute(mockSettings);
+    assert.match(mockSettingsHtml, /保留复用：未解锁/);
+    assert.doesNotMatch(mockSettingsHtml, /class="pill solid"/);
+    assert.match(mockComputeHtml, /模拟模式/);
+    assert.doesNotMatch(mockComputeHtml, /保留复用/);
+  } finally {
+    if (prevStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = prevStorage;
+    if (prevWindow === undefined) delete globalThis.window;
+    else globalThis.window = prevWindow;
+  }
 });
