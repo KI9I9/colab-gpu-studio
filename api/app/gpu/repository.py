@@ -669,8 +669,18 @@ class Repository:
             if instance is not None:
                 job.instance_id = instance.id
                 job.account_id = account_id
+            hard_deadline = instance_data.get('hard_deadline_at') if instance is not None else None
+            if hard_deadline is None:
+                hard_deadline = lease.data.get('hard_deadline_at')
+            following_minutes = following.data.get('max_runtime_minutes')
+            if following_minutes is None and isinstance(following.data.get('execution_policy'), Mapping):
+                following_minutes = following.data['execution_policy'].get('max_runtime_minutes')
+            if hard_deadline is not None and following_minutes is not None:
+                next_deadline = min(float(now) + float(following_minutes) * 60.0, float(hard_deadline))
+            else:
+                next_deadline = lease.data['deadline_epoch']
             following.data={**following.data,'lease_id':lease_id,
-                            'deadline_epoch':lease.data['deadline_epoch'],
+                            'deadline_epoch':next_deadline,
                             **({'instance_id':instance.id,'account_id':account_id} if instance is not None else {})}
             if instance is not None:
                 following.instance_id = instance.id
@@ -678,7 +688,7 @@ class Repository:
             handle=lease.data.get('handle')
             # Handle ownership must follow the lease owner for every provider (real ones verify it).
             lease.data={**lease.data,'owner_job_id':next_job_id,'current_job_id':next_job_id,
-                        'last_active_at':now,'state':'active',
+                        'last_active_at':now,'state':'active','deadline_epoch':next_deadline,
                         **({'instance_id':instance.id,'account_id':account_id} if instance is not None else {}),
                         **({'handle':retarget_handle(handle,next_job_id)} if isinstance(handle,dict) else {})}
             lease.state='active'

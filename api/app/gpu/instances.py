@@ -401,6 +401,10 @@ class InstanceService:
         }
         if job.get("hard_deadline_at") is not None:
             payload["hard_deadline_at"] = float(job["hard_deadline_at"])
+        elif self._cfg("max_runtime_minutes"):
+            payload["hard_deadline_at"] = (
+                float(self.clock()) + float(self._cfg("max_runtime_minutes")) * 60.0
+            )
         row = model(id=stable_id, owner_id=job["owner_id"], project_id=job.get("project_id"), state="allocating", data=payload, version=0, created_at=now, updated_at=now)
         session.add(row)
         try:
@@ -577,8 +581,10 @@ class InstanceService:
                 raise InstanceConflict("实例已被清理流程围栏")
             if data.get("current_job_id") not in {None, job.get("id")}:
                 raise InstanceConflict("instance is owned by another job")
-            deadline = lease_data.get("hard_deadline_at") or lease_data.get("deadline_epoch")
             current = data.get("hard_deadline_at")
+            deadline = lease_data.get("hard_deadline_at")
+            if deadline is None and current is None:
+                deadline = lease_data.get("deadline_epoch")
             if deadline is not None:
                 deadline = float(deadline)
                 data["hard_deadline_at"] = min(float(current), deadline) if current is not None else deadline

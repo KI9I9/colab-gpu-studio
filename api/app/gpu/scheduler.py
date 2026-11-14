@@ -155,15 +155,29 @@ class Scheduler:
                 patch[key] = instance[key]
         if instance.get("state") is not None:
             patch["instance_state"] = instance["state"]
-        hard_deadline = self._instance_epoch(instance.get("hard_deadline_at"))
-        if hard_deadline is not None:
-            patch["deadline_epoch"] = hard_deadline
         return patch
+
+    def _job_deadline(
+        self, job: dict, hard_deadline: float | None = None, now: float | None = None
+    ) -> float:
+        current_now = self.clock() if now is None else float(now)
+        limit = current_now + self._effective_runtime(job) * 60
+        if hard_deadline is None:
+            hard_deadline = self._instance_epoch(job.get("hard_deadline_at"))
+        return min(limit, hard_deadline) if hard_deadline is not None else limit
 
     def _merge_instance(self, job: dict, instance: dict | None) -> dict:
         patch = self._instance_patch(instance)
         if not patch:
             return job
+        hard_deadline = self._instance_epoch((instance or {}).get("hard_deadline_at"))
+        existing_deadline = self._instance_epoch(job.get("deadline_epoch"))
+        if (
+            hard_deadline is not None
+            and existing_deadline is not None
+            and existing_deadline > hard_deadline
+        ):
+            patch["deadline_epoch"] = hard_deadline
         return self._update("jobs", job["id"], patch, job.get("owner_id"))
 
     def _service_instances(self) -> list[dict]:
@@ -230,25 +244,40 @@ class Scheduler:
         if not self._is_v020_job(job) or not isinstance(instance, dict):
             return job
         lease_id = instance.get("lease_id")
+        if (not isinstance(lease_id, str) or not lease_id) and job.get("instance_id"):
+            live_instance = self._service_instance_for_job(job)
+            if isinstance(live_instance, dict):
+                lease_id = live_instance.get("lease_id")
+                instance = live_instance
         if not isinstance(lease_id, str) or not lease_id:
             return job
         lease = self._get("leases", lease_id, job.get("owner_id"))
         if not lease or lease.get("state") != "idle":
             return job
-        deadline = lease.get("deadline_epoch")
+        now = self.clock()
+        hard_deadline = self._instance_epoch(instance.get("hard_deadline_at"))
+        if hard_deadline is None:
+            hard_deadline = self._instance_epoch(lease.get("hard_deadline_at"))
+        deadline = self._instance_epoch(lease.get("deadline_epoch"))
         idle_deadline = lease.get("idle_deadline_at")
-        if idle_deadline is not None and self.clock() >= float(idle_deadline):
+        if idle_deadline is not None and now >= float(idle_deadline):
             return job
-        if deadline is not None and self.clock() >= float(deadline):
+        if hard_deadline is not None and now >= hard_deadline:
             return job
+        if deadline is not None and now >= deadline:
+            return job
+        job_deadline = self._job_deadline(job, hard_deadline=hard_deadline, now=now)
         handle = lease.get("handle")
         lease_patch = {
             "state": "active",
             "owner_job_id": job["id"],
             "current_job_id": job["id"],
             "idle_deadline_at": None,
-            "last_active_at": self.clock(),
+            "last_active_at": now,
+            "deadline_epoch": job_deadline,
         }
+        if hard_deadline is not None:
+            lease_patch["hard_deadline_at"] = hard_deadline
         if isinstance(handle, dict):
             lease_patch["handle"] = {
                 **handle,
@@ -256,9 +285,9 @@ class Scheduler:
                 "owner_job_id": job["id"],
             }
         self._update("leases", lease_id, lease_patch, job.get("owner_id"))
-        job_patch = {"lease_id": lease_id}
-        if deadline is not None:
-            job_patch["deadline_epoch"] = deadline
+        job_patch = {"lease_id": lease_id, "deadline_epoch": job_deadline}
+        if hard_deadline is not None:
+            job_patch["hard_deadline_at"] = hard_deadline
         return self._update("jobs", job["id"], job_patch, job.get("owner_id"))
 
     def _bind_instance_lease(self, job: dict, lease: dict) -> tuple[dict, dict]:
@@ -636,9 +665,12 @@ class Scheduler:
             return current
         request_id, runtime_id = str(uuid.uuid4()), f"studio-{uuid.uuid4().hex}"
         now = self.clock()
-        deadline = job.get("deadline_epoch")
+        hard_deadline = self._instance_epoch(job.get("hard_deadline_at"))
+        deadline = self._instance_epoch(job.get("deadline_epoch"))
         if deadline is None:
-            deadline = now + self._effective_runtime(job) * 60
+            deadline = self._job_deadline(job, hard_deadline=hard_deadline, now=now)
+        elif hard_deadline is not None:
+            deadline = min(deadline, hard_deadline)
         payload = {
             "owner_job_id": job["id"],
             "provider": self._provider_name(job),
@@ -651,6 +683,8 @@ class Scheduler:
             "create_attempts": 0,
             "deadline_epoch": deadline,
         }
+        if hard_deadline is not None:
+            payload["hard_deadline_at"] = hard_deadline
         for key in ("instance_id", "account_id"):
             if job.get(key) is not None:
                 payload[key] = job[key]
@@ -1361,8 +1395,13 @@ class Scheduler:
                     lease_patch = {"state": "idle", "current_job_id": None, "last_seen": self.clock()}
                     if instance.get("idle_deadline_at") is not None:
                         lease_patch["idle_deadline_at"] = instance["idle_deadline_at"]
-                    if instance.get("hard_deadline_at") is not None:
-                        lease_patch["deadline_epoch"] = instance["hard_deadline_at"]
+                    hard = instance.get("hard_deadline_at")
+                    if hard is None:
+                        hard = lease.get("hard_deadline_at")
+                    if hard is not None:
+                        lease_patch["deadline_epoch"] = hard
+                    elif instance.get("idle_deadline_at") is not None:
+                        lease_patch["deadline_epoch"] = instance["idle_deadline_at"]
                     self._update("leases", lease["id"], lease_patch, job.get("owner_id"))
                 if job.get("execution_id"):
                     self._update(

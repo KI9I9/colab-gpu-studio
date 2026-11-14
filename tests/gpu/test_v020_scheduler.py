@@ -199,3 +199,94 @@ def test_v020_save_requires_remote_delete_confirmation_before_marking_deleted():
     assert lease["state"] == "cleanup_pending"
     assert service.instances["instance-1"]["state"] != "deleted"
     assert not any(call[0] == "mark_deleted" for call in service.calls)
+
+
+def test_v020_retained_instance_renews_per_job_deadline_across_four_jobs():
+    from app.gpu.compute import GpuConfig
+    from app.gpu.instances import InstanceService
+
+    now = [1_000.0]
+    cfg = GpuConfig(max_runtime_minutes=120)
+    repo = Repository(Store("sqlite:///:memory:"))
+    service = InstanceService(repo, clock=lambda: now[0], config=cfg)
+    provider, executor = MockColabProvider(), MockGPUExecutor()
+    scheduler = Scheduler(
+        repo,
+        provider_factory=lambda _: provider,
+        executor_factory=lambda _: executor,
+        config=cfg,
+        instance_service=service,
+        clock=lambda: now[0],
+    )
+
+    def create_retained_job(key: str):
+        return repo.create_job(
+            "owner-1",
+            {
+                "provider": "mock",
+                "project_id": "project-1",
+                "compatibility_signature": "sig-krea",
+                "max_runtime_minutes": 30,
+                "snapshot": {"manifest": {"mock": True}},
+                "execution_policy": {
+                    "provider": "mock",
+                    "lifecycle": "retain",
+                    "max_runtime_minutes": 30,
+                    "retain_idle_minutes": 15,
+                },
+                "estimated_units": 0,
+            },
+            key,
+        )[0]
+
+    j1 = create_retained_job("img-1")
+    r1 = run_to_terminal(scheduler, repo, j1["id"])
+    assert r1["state"] == "completed"
+    inst = service.get("owner-1", r1["instance_id"])
+    assert inst["hard_deadline_at"] == 1_000.0 + 120 * 60
+    assert r1["deadline_epoch"] == 1_000.0 + 30 * 60
+    assert provider.create_calls == 1
+
+    now[0] = 2_000.0
+    j2 = create_retained_job("img-2")
+    r2 = run_to_terminal(scheduler, repo, j2["id"])
+    assert r2["state"] == "completed"
+    assert r2["instance_id"] == inst["id"]
+    assert r2["deadline_epoch"] == 2_000.0 + 30 * 60
+    assert provider.create_calls == 1
+
+    now[0] = 2_500.0
+    j3 = create_retained_job("img-3")
+    r3 = run_to_terminal(scheduler, repo, j3["id"])
+    assert r3["state"] == "completed"
+    assert r3["instance_id"] == inst["id"]
+    assert provider.create_calls == 1
+
+    now[0] = 2_780.0
+    slow_executor = MockGPUExecutor(polls_before_complete=3)
+    scheduler.executor_factory = lambda _: slow_executor
+    j4 = create_retained_job("img-4")
+    for idx in range(25):
+        if idx == 4:
+            now[0] = 2_900.0
+        scheduler.tick()
+        cur4 = repo.get("jobs", j4["id"], "owner-1")
+        if cur4["state"] in {"completed", "failed", "cancelled"}:
+            break
+    r4 = repo.get("jobs", j4["id"], "owner-1")
+    assert r4["state"] == "completed"
+    assert r4["instance_id"] == inst["id"]
+    assert r4["deadline_epoch"] == 2_780.0 + 30 * 60
+    assert provider.create_calls == 1
+    assert provider.delete_calls == 0
+
+    now[0] = 7_000.0
+    inst_mid = service.get("owner-1", inst["id"])
+    # Refresh idle deadline so Job 5 can still reuse within the 120m hard ceiling.
+    service.retention("owner-1", inst["id"], "retain", 15, "refresh-j5", inst_mid["version"])
+    scheduler.executor_factory = lambda _: MockGPUExecutor()
+    j5 = create_retained_job("img-5")
+    r5 = run_to_terminal(scheduler, repo, j5["id"])
+    assert r5["state"] == "completed"
+    assert r5["deadline_epoch"] == 1_000.0 + 120 * 60
+    assert provider.create_calls == 1
