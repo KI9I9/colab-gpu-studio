@@ -219,19 +219,19 @@ def test_v020_retained_instance_renews_per_job_deadline_across_four_jobs():
         clock=lambda: now[0],
     )
 
-    def create_retained_job(key: str):
+    def create_retained_job(key: str, runtime_minutes: int = 30):
         return repo.create_job(
             "owner-1",
             {
                 "provider": "mock",
                 "project_id": "project-1",
                 "compatibility_signature": "sig-krea",
-                "max_runtime_minutes": 30,
+                "max_runtime_minutes": runtime_minutes,
                 "snapshot": {"manifest": {"mock": True}},
                 "execution_policy": {
                     "provider": "mock",
                     "lifecycle": "retain",
-                    "max_runtime_minutes": 30,
+                    "max_runtime_minutes": runtime_minutes,
                     "retain_idle_minutes": 15,
                 },
                 "estimated_units": 0,
@@ -247,15 +247,15 @@ def test_v020_retained_instance_renews_per_job_deadline_across_four_jobs():
     assert r1["deadline_epoch"] == 1_000.0 + 30 * 60
     assert provider.create_calls == 1
 
-    now[0] = 2_000.0
+    now[0] = 1_600.0
     j2 = create_retained_job("img-2")
     r2 = run_to_terminal(scheduler, repo, j2["id"])
     assert r2["state"] == "completed"
     assert r2["instance_id"] == inst["id"]
-    assert r2["deadline_epoch"] == 2_000.0 + 30 * 60
+    assert r2["deadline_epoch"] == 1_600.0 + 30 * 60
     assert provider.create_calls == 1
 
-    now[0] = 2_500.0
+    now[0] = 2_200.0
     j3 = create_retained_job("img-3")
     r3 = run_to_terminal(scheduler, repo, j3["id"])
     assert r3["state"] == "completed"
@@ -267,7 +267,7 @@ def test_v020_retained_instance_renews_per_job_deadline_across_four_jobs():
     scheduler.executor_factory = lambda _: slow_executor
     j4 = create_retained_job("img-4")
     for idx in range(25):
-        if idx == 4:
+        if idx == 6:
             now[0] = 2_900.0
         scheduler.tick()
         cur4 = repo.get("jobs", j4["id"], "owner-1")
@@ -280,13 +280,11 @@ def test_v020_retained_instance_renews_per_job_deadline_across_four_jobs():
     assert provider.create_calls == 1
     assert provider.delete_calls == 0
 
-    now[0] = 7_000.0
-    inst_mid = service.get("owner-1", inst["id"])
-    # Refresh idle deadline so Job 5 can still reuse within the 120m hard ceiling.
-    service.retention("owner-1", inst["id"], "retain", 15, "refresh-j5", inst_mid["version"])
+    now[0] = 3_200.0
     scheduler.executor_factory = lambda _: MockGPUExecutor()
-    j5 = create_retained_job("img-5")
+    j5 = create_retained_job("img-5", runtime_minutes=100)
     r5 = run_to_terminal(scheduler, repo, j5["id"])
     assert r5["state"] == "completed"
+    assert r5["instance_id"] == inst["id"]
     assert r5["deadline_epoch"] == 1_000.0 + 120 * 60
     assert provider.create_calls == 1
