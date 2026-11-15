@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Image as ImageIcon, Film, Search, Star, Check, Eye, RotateCcw, Trash2, Play } from 'lucide-react';
-import { assetUrl, type GalleryAsset } from '../lib/gpu-api';
+import { Image as ImageIcon, Film, Search, Star, Check, Eye, Download, RotateCcw, Trash2, Play } from 'lucide-react';
+import { assetPreviewUrl, assetUrl, type GalleryAsset } from '../lib/gpu-api';
 import styles from '../gpu.module.css';
 
 type Filter = 'all' | 'image' | 'video' | 'favorite';
@@ -74,7 +74,7 @@ export function GalleryPanel({
                   <button className={styles.tileCover} type="button" aria-label={`查看 ${asset.filename || '作品'}`}
                     onClick={() => { setSelectedId(asset.id); setConfirmDelete(false); onOpen(asset); }}>
                     {isVideo ? (
-                      <video src={assetUrl(asset)} preload="metadata" muted playsInline aria-label={asset.filename || '视频'} />
+                      <video src={assetPreviewUrl(asset)} preload="metadata" muted playsInline aria-label={asset.filename || '视频'} />
                     ) : isJson ? (
                       <span className={styles.tileJson}>JSON<small>诊断文件</small></span>
                     ) : (
@@ -116,6 +116,8 @@ export function GalleryPanel({
       {selected && (
         <div className={styles.floatBar} role="toolbar" aria-label="作品操作">
           <button type="button" onClick={() => onOpen(selected)}><Eye size={17} strokeWidth={1.6} aria-hidden />预览</button>
+          <i />
+          <a href={assetUrl(selected)} download={selected.filename || selected.id}><Download size={17} strokeWidth={1.6} aria-hidden />下载</a>
           <i />
           <button type="button" disabled={!onReuse || !selected.source_job_id} onClick={() => onReuse && onReuse(selected)}><RotateCcw size={17} strokeWidth={1.6} aria-hidden />再次生成</button>
           <i />

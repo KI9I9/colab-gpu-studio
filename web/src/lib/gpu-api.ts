@@ -83,7 +83,7 @@ export interface GpuJob {
   [key: string]: unknown;
 }
 export interface GpuEvent { id?: string; state?: string; event_type?: string; message?: string; progress?: number; created_at?: string; payload?: Record<string, unknown>; [key: string]: unknown; }
-export interface GalleryAsset { id: string; project_id: string; mime: string; filename?: string; thumbnail_url?: string; download_url?: string; favorite?: boolean; gpu_job_id?: string; source_job_id?: string; mock?: boolean; metadata?: Record<string, unknown>; [key: string]: unknown; }
+export interface GalleryAsset { id: string; project_id: string; mime: string; filename?: string; thumbnail_url?: string; preview_url?: string; download_url?: string; favorite?: boolean; gpu_job_id?: string; source_job_id?: string; mock?: boolean; metadata?: Record<string, unknown>; [key: string]: unknown; }
 export interface CcuSnapshot { alias?: string | null; balance?: number | null; rate?: number | null; assignments?: number | null; active_jobs?: number | null; active_leases?: number | null; sampled_at?: number | null; error?: string; }
 export interface CcuAnomaly { account_id: string; alias?: string | null; assignments?: number | null; first_seen?: number | null; last_seen?: number | null; resolved_at?: number | null; }
 export interface UsageReconciliationRow { job_id?: string; state?: string | null; estimated_units?: number | null; actual_units?: number | null; ccu_attribution?: string | null; ccu_source?: string | null; }
@@ -333,6 +333,7 @@ export async function uploadAsset(projectId: string, file: File, onProgress?: (p
   });
 }
 export const assetUrl = (asset: GalleryAsset, thumbnail = false) => thumbnail ? asset.thumbnail_url || `/api/assets/${asset.id}/thumbnail` : asset.download_url || `/api/assets/${asset.id}/download`;
+export const assetPreviewUrl = (asset: GalleryAsset) => asset.preview_url || `/api/assets/${asset.id}/preview`;
 export const updateAsset = (id: string, favorite: boolean) => apiFetch<GalleryAsset>(`/api/assets/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ favorite }) });
 export const deleteAsset = (id: string) => apiFetch<void>(`/api/assets/${encodeURIComponent(id)}`, { method: 'DELETE' });
 

@@ -171,3 +171,48 @@ test('App refreshes reference images across tab switch and completed jobs withou
     /getReferenceAssets\(projectId\)[\s\S]*\[projectId, loggedIn, tab, completedJobsKey\]/
   );
 });
+
+test('Gallery preview and download URLs are separated to avoid browser cache lock', async () => {
+  const { outputFiles } = await build({
+    stdin: {
+      contents: `
+        export { assetUrl, assetPreviewUrl } from './src/lib/gpu-api';
+      `,
+      resolveDir: process.cwd(),
+      loader: 'ts',
+    },
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    define: {
+      'import.meta.env.VITE_API_BASE_URL': '""',
+    },
+    write: false,
+    outfile: 'asset-url-check.cjs',
+  });
+  const mod = { exports: {} };
+  new Function('require', 'module', 'exports', outputFiles[0].text)(
+    createRequire(import.meta.url),
+    mod,
+    mod.exports,
+  );
+  const { assetUrl, assetPreviewUrl } = mod.exports;
+  const sample = { id: 'a123', project_id: 'p1', mime: 'video/mp4' };
+  assert.equal(assetPreviewUrl(sample), '/api/assets/a123/preview');
+  assert.equal(assetUrl(sample, false), '/api/assets/a123/download');
+  assert.equal(assetUrl(sample, true), '/api/assets/a123/thumbnail');
+
+  const appSource = read('App.tsx');
+  assert.match(appSource, /<video\b[^>]*src=\{assetPreviewUrl\(viewer\)\}/);
+  assert.match(appSource, /<img\b[^>]*src=\{assetPreviewUrl\(viewer\)\}/);
+  assert.match(appSource, /<a\b[^>]*href=\{assetUrl\(viewer\)\}\s+download=\{viewer\.filename \|\| viewer\.id\}>/);
+  assert.doesNotMatch(appSource, /href=\{assetUrl\(viewer\)\}[^>]*target="_blank"/);
+
+  const gallerySource = read('pages/GalleryPage.tsx');
+  assert.match(gallerySource, /<video\b[^>]*src=\{assetPreviewUrl\(asset\)\}/);
+  assert.match(gallerySource, /<a\b[^>]*href=\{assetUrl\(selected\)\}\s+download=\{selected\.filename \|\| selected\.id\}>/);
+
+  const pickerSource = read('components/AssetSlotPicker.tsx');
+  assert.match(pickerSource, /<video\b[^>]*src=\{assetPreviewUrl\(previewAsset\)\}/);
+  assert.match(pickerSource, /src=\{assetPreviewUrl\(previewAsset\)\}/);
+});

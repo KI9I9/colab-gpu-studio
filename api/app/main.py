@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import io
 import json
 import os
 import secrets
@@ -11,12 +10,12 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, File, Form, Header, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from PIL import Image
 from pydantic import BaseModel, Field
 
 from . import __version__
@@ -46,7 +45,7 @@ from .oauth_config_routes import router as oauth_config_router
 from .presenters import public_asset, public_job
 from .review_routes import router as review_router
 from .security import sign_session
-from .storage import asset_path, delete_asset_file, save_asset
+from .storage import asset_path, delete_asset_file, ensure_image_thumbnail, save_asset
 
 
 def usage(st, owner):
@@ -168,7 +167,13 @@ async def security_context(request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
     response.headers["X-Frame-Options"] = "DENY"
-    if request.url.path.startswith("/api/"):
+    is_cacheable_asset = (
+        request.method in {"GET", "HEAD"}
+        and request.url.path.startswith("/api/assets/")
+        and request.url.path.endswith(("/thumbnail", "/preview", "/download"))
+        and response.status_code in {200, 206, 304}
+    )
+    if request.url.path.startswith("/api/") and not is_cacheable_asset:
         response.headers["Cache-Control"] = "private, no-store"
     return response
 
@@ -715,23 +720,84 @@ async def upload_asset(
     )
 
 
-@app.get("/api/assets/{asset_id}/download")
+ASSET_CACHE_CONTROL = "private, max-age=31536000, immutable"
+
+
+def _if_none_match_matches(request: Request, etag: str) -> bool:
+    header = request.headers.get("if-none-match")
+    if not header:
+        return False
+    for raw in header.split(","):
+        tag = raw.strip()
+        if tag.startswith("W/"):
+            tag = tag[2:].strip()
+        if tag == "*" or tag == etag:
+            return True
+    return False
+
+
+def _asset_file_response(
+    request: Request,
+    path: Path,
+    *,
+    media_type: str,
+    filename: str | None = None,
+    disposition: str = "inline",
+    etag_token: str | None = None,
+):
+    headers = {"Cache-Control": ASSET_CACHE_CONTROL}
+    if etag_token:
+        etag = f'"{etag_token}"'
+        headers["ETag"] = etag
+        if request.method in {"GET", "HEAD"} and "range" not in request.headers:
+            if _if_none_match_matches(request, etag):
+                return Response(status_code=304, headers=headers)
+    kwargs: dict[str, Any] = {"media_type": media_type, "headers": headers}
+    if filename is not None:
+        kwargs["filename"] = filename
+        kwargs["content_disposition_type"] = disposition
+    return FileResponse(path, **kwargs)
+
+
 @app.get("/api/assets/{asset_id}/preview")
-def download_asset(asset_id: str, user=Depends(current_user), st=Depends(get_store)):
+def preview_asset(asset_id: str, request: Request, user=Depends(current_user), st=Depends(get_store)):
     asset = own(st, "assets", asset_id, user)
-    return FileResponse(asset_path(asset), media_type=asset["mime"], filename=asset["filename"])
+    return _asset_file_response(
+        request,
+        asset_path(asset),
+        media_type=asset["mime"],
+        filename=asset["filename"],
+        disposition="inline",
+        etag_token=asset.get("sha256"),
+    )
+
+
+@app.get("/api/assets/{asset_id}/download")
+def download_asset(asset_id: str, request: Request, user=Depends(current_user), st=Depends(get_store)):
+    asset = own(st, "assets", asset_id, user)
+    return _asset_file_response(
+        request,
+        asset_path(asset),
+        media_type=asset["mime"],
+        filename=asset["filename"],
+        disposition="attachment",
+        etag_token=asset.get("sha256"),
+    )
 
 
 @app.get("/api/assets/{asset_id}/thumbnail")
-def thumbnail(asset_id: str, user=Depends(current_user), st=Depends(get_store)):
+def thumbnail(asset_id: str, request: Request, user=Depends(current_user), st=Depends(get_store)):
     asset = own(st, "assets", asset_id, user)
     if not asset["mime"].startswith("image/"):
         raise APIError("THUMBNAIL_UNAVAILABLE", "非图片素材不提供图片缩略图", 404)
-    with Image.open(asset_path(asset)) as image:
-        image.thumbnail((480, 480))
-        target = io.BytesIO()
-        image.convert("RGB").save(target, "WEBP", quality=80)
-    return Response(target.getvalue(), media_type="image/webp")
+    thumb_path = ensure_image_thumbnail(asset)
+    thumb_etag = f"{asset['sha256']}-thumb480" if asset.get("sha256") else None
+    return _asset_file_response(
+        request,
+        thumb_path,
+        media_type="image/webp",
+        etag_token=thumb_etag,
+    )
 
 
 @app.patch("/api/assets/{asset_id}")

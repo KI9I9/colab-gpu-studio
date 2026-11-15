@@ -212,7 +212,7 @@
   display: flex; align-items: center; justify-content: space-around; padding: 4px;
   border: 1px solid var(--line-strong); border-radius: var(--r-lg); background: var(--card-3); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
-.floatBar button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; min-height: 44px; border: 0; border-radius: 12px; background: transparent; font-size: 0.86rem; }
+.floatBar button, .floatBar a { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; min-height: 44px; padding: 0 6px; border: 0; border-radius: 12px; background: transparent; color: inherit; font-size: 0.86rem; text-decoration: none; white-space: nowrap; }
 .floatBar button:disabled { opacity: 0.35; }
 .floatBar button[data-danger="true"] { color: var(--danger); }
 .floatBar i { width: 1px; height: 22px; background: var(--line-strong); }

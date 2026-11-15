@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Eye, Image as ImageIcon, Maximize2, Upload, X } from 'lucide-react';
-import { assetUrl, type GalleryAsset } from '../lib/gpu-api';
+import { assetPreviewUrl, assetUrl, type GalleryAsset } from '../lib/gpu-api';
 import styles from '../gpu.module.css';
 
 export type AssetSlotPickerProps = {
@@ -125,7 +125,7 @@ export function AssetSlotPicker({
   );
 
   function thumbSrc(asset: GalleryAsset): string {
-    return assetUrl(asset, isImageAsset(asset) && !fallbackIds[asset.id]);
+    return isImageAsset(asset) && !fallbackIds[asset.id] ? assetUrl(asset, true) : assetPreviewUrl(asset);
   }
 
   function markFallback(assetId: string) {
@@ -334,11 +334,11 @@ export function AssetSlotPicker({
               </button>
             </div>
             {isVideoAsset(previewAsset) ? (
-              <video className={styles.viewerVideo} src={assetUrl(previewAsset, false)} controls playsInline />
+              <video className={styles.viewerVideo} src={assetPreviewUrl(previewAsset)} controls playsInline />
             ) : (
               <img
                 className={styles.viewerImage}
-                src={assetUrl(previewAsset, false)}
+                src={assetPreviewUrl(previewAsset)}
                 alt={previewAsset.filename || previewAsset.id}
               />
             )}

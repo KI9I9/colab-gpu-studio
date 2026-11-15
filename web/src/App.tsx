@@ -6,7 +6,7 @@ import { ComputePage, ThemePicker } from './pages/ComputePage';
 import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Sparkles, Zap, Image as ImageIcon, Cpu, Settings as SettingsIcon, Folder, ChevronDown, X, Plus, Check, Maximize2, Star, Download, Trash2, RotateCcw, Triangle } from 'lucide-react';
 import {
-  apiMessage, assetUrl, cancelGpuJob, createGpuJob, createGpuBatch, createProject, deleteAsset, disconnectGoogle,
+  apiMessage, assetPreviewUrl, assetUrl, cancelGpuJob, createGpuJob, createGpuBatch, createProject, deleteAsset, disconnectGoogle,
   apiFetch,
   getGpuComputeSpecs, getGpuGallery, getGpuJob, getGpuJobs, getGpuModels, listGpuInstances,
   getGpuPresets, getReferenceAssets, getGpuSettings, getGpuUsage, getGpuWorkflowSchema, getGpuWorkflows, getProjects, importGpuWorkflow,
@@ -1075,9 +1075,9 @@ export default function App() {
               </div>
             </div>
             {viewer.mime.startsWith('video/') ? (
-              <video className={styles.viewerVideo} src={assetUrl(viewer)} controls autoPlay playsInline />
+              <video className={styles.viewerVideo} src={assetPreviewUrl(viewer)} controls autoPlay playsInline />
             ) : viewer.mime.startsWith('image/') ? (
-              <img className={styles.viewerImage} src={assetUrl(viewer)} alt="" />
+              <img className={styles.viewerImage} src={assetPreviewUrl(viewer)} alt="" />
             ) : (
               <p className="muted">这是诊断文件，不能直接预览，请下载查看。</p>
             )}
@@ -1088,7 +1088,7 @@ export default function App() {
               <button className="button secondary small" type="button" onClick={() => void reuseAsset(viewer)}>
                 <RotateCcw size={14} strokeWidth={1.6} aria-hidden />用同样参数再来一次
               </button>
-              <a className="button secondary small" href={assetUrl(viewer)} download={viewer.filename || viewer.id} target="_blank" rel="noreferrer">
+              <a className="button secondary small" href={assetUrl(viewer)} download={viewer.filename || viewer.id}>
                 <Download size={14} strokeWidth={1.6} aria-hidden />下载
               </a>
               <button className="button danger small" type="button" onClick={() => void remove(viewer)}>

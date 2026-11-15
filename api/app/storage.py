@@ -84,9 +84,48 @@ def save_asset(store, owner_id, project_id, content, filename, source_job_id=Non
     return store.create("assets", owner_id, row, project_id=project_id)
 
 
+def thumbnail_cache_path(asset):
+    root = (settings.data_dir / "thumbs").resolve()
+    asset_id = str(asset.get("id") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", asset_id):
+        raise ValueError("非法缩略图缓存标识")
+    sha_prefix = re.sub(r"[^0-9a-fA-F]", "", str(asset.get("sha256") or ""))[:16]
+    name = f"{asset_id}-{sha_prefix}.webp" if sha_prefix else f"{asset_id}.webp"
+    path = (root / name).resolve()
+    if not path.is_relative_to(root) or path == root:
+        raise ValueError("非法缩略图缓存路径")
+    return path
+
+
+def ensure_image_thumbnail(asset):
+    cache_file = thumbnail_cache_path(asset)
+    try:
+        if cache_file.is_file() and cache_file.stat().st_size > 0:
+            return cache_file
+    except OSError:
+        pass
+    source = asset_path(asset)
+    with Image.open(source) as image:
+        image.thumbnail((480, 480))
+        target = io.BytesIO()
+        image.convert("RGB").save(target, "WEBP", quality=80)
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cache_file.with_name(f"{cache_file.name}.{uuid.uuid4().hex}.partial")
+    try:
+        tmp.write_bytes(target.getvalue())
+        tmp.replace(cache_file)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return cache_file
+
+
 def read_asset(asset):
     return asset_path(asset).read_bytes()
 
 
 def delete_asset_file(asset):
     asset_path(asset).unlink(missing_ok=True)
+    try:
+        thumbnail_cache_path(asset).unlink(missing_ok=True)
+    except ValueError:
+        pass
