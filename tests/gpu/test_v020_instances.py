@@ -419,8 +419,8 @@ def test_expired_or_non_idle_lease_retained_instance_is_not_reused(repo):
     assert fresh["id"] != inst["id"]
     assert fresh["hard_deadline_at"] == now[0] + 120 * 60
 
-    # Even before idle_deadline_at, a non-idle (cleanup_pending) lease fences reuse.
-    now[0] = 500.0
+    # Even before its own idle_deadline_at, a non-idle (cleanup_pending) lease fences reuse.
+    now[0] = 1500.0
     lease = repo.create(
         "leases",
         "owner-1",
@@ -455,7 +455,7 @@ def test_expired_or_non_idle_lease_retained_instance_is_not_reused(repo):
             "state": "retained_idle",
             "current_job_id": None,
             "compatibility_signature": "compat-v1",
-            "hard_deadline_at": 400.0,
+            "hard_deadline_at": 1400.0,
         },
         record_id="inst-stale-hard",
     )

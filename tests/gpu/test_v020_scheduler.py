@@ -319,11 +319,31 @@ def test_v020_orphan_cleanup_passes_account_id_and_recovers_failed_idle_or_delet
     provider = MockColabProvider(fail_delete_times=1)
     seen_accounts = []
 
+    class AccountCheckedProvider:
+        def __init__(self, inner, account_id, job_id):
+            self._inner = inner
+            self._account_id = account_id
+            self._job_id = job_id
+
+        def _require_account(self, op: str):
+            seen_accounts.append((op, self._job_id, self._account_id))
+            if self._account_id != "acct-1":
+                raise ComputeError("Google OAuth未连接，真实GPU能力已关闭")
+
+        def create(self, spec, request_id, job_id, runtime_id):
+            self._require_account("create")
+            return self._inner.create(spec, request_id, job_id, runtime_id)
+
+        def inspect(self, handle):
+            self._require_account("inspect")
+            return self._inner.inspect(handle)
+
+        def delete(self, handle):
+            self._require_account("delete")
+            return self._inner.delete(handle)
+
     def provider_factory(job):
-        seen_accounts.append((job.get("id"), job.get("account_id")))
-        if job.get("account_id") != "acct-1":
-            raise ComputeError("Google OAuth未连接，真实GPU能力已关闭")
-        return provider
+        return AccountCheckedProvider(provider, job.get("account_id"), job.get("id"))
 
     scheduler = Scheduler(
         repo,
@@ -369,9 +389,7 @@ def test_v020_orphan_cleanup_passes_account_id_and_recovers_failed_idle_or_delet
     scheduler.watchdog()
     failed_lease = repo.get("leases", old_lease_id, "owner-1")
     assert failed_lease["state"] == "cleanup_pending"
-    assert ("evening-job", "acct-1") in seen_accounts or any(
-        acct == "acct-1" for _, acct in seen_accounts
-    )
+    assert ("delete", j1["id"], "acct-1") in seen_accounts
 
     # Next morning (well past yesterday's hard_deadline_at): a new job must not
     # reuse the expired/cleanup_pending instance or inherit its stale deadline.
@@ -429,3 +447,4 @@ def test_v020_orphan_cleanup_passes_account_id_and_recovers_failed_idle_or_delet
     done_orphan = repo.get("leases", orphan_lease["id"], "owner-1")
     assert done_orphan["state"] == "deleted"
     assert done_orphan["remote_delete_source"] == "orphan_cleanup_provider_confirmation"
+    assert ("delete", "job-dead", "acct-1") in seen_accounts
