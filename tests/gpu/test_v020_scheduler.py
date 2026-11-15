@@ -342,6 +342,9 @@ def test_v020_orphan_cleanup_passes_account_id_and_recovers_failed_idle_or_delet
             self._require_account("delete")
             return self._inner.delete(handle)
 
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
     def provider_factory(job):
         return AccountCheckedProvider(provider, job.get("account_id"), job.get("id"))
 
@@ -410,7 +413,8 @@ def test_v020_orphan_cleanup_passes_account_id_and_recovers_failed_idle_or_delet
     # converges to deleted instead of looping forever in claim_orphan_lease.
     req_id = str(uuid.uuid4())
     rt_id = "rt-already-deleted-inst"
-    provider.create({"provider": "mock"}, req_id, "job-dead", rt_id)
+    created_handle = provider.create({"provider": "mock"}, req_id, "job-dead", rt_id)
+    created_handle = provider.bind_owner(created_handle, "owner-1")
     dead_inst = repo.create(
         "instances",
         "owner-1",
@@ -435,9 +439,7 @@ def test_v020_orphan_cleanup_passes_account_id_and_recovers_failed_idle_or_delet
             "runtime_id": rt_id,
             "cleanup_next_epoch": 0.0,
             "handle": {
-                "runtime_name": f"mock-runtime-{rt_id}",
-                "runtime_id": rt_id,
-                "request_id": req_id,
+                **created_handle,
                 "job_id": "job-dead",
                 "owner_job_id": "job-dead",
             },
