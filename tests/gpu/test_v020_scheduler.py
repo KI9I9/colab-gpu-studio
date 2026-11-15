@@ -288,3 +288,144 @@ def test_v020_retained_instance_renews_per_job_deadline_across_four_jobs():
     assert r5["instance_id"] == inst["id"]
     assert r5["deadline_epoch"] == 1_000.0 + 120 * 60
     assert provider.create_calls == 1
+
+
+def test_v020_orphan_cleanup_passes_account_id_and_recovers_failed_idle_or_deleted_instance():
+    import uuid
+    from app.gpu.compute import ComputeError, GpuConfig
+    from app.gpu.instances import InstanceService
+
+    now = [1_000.0]
+    cfg = GpuConfig(
+        max_runtime_minutes=120,
+        cleanup_retry_base_seconds=30.0,
+        cleanup_retry_max_seconds=300.0,
+    )
+    repo = Repository(Store("sqlite:///:memory:"))
+    repo.create(
+        "accounts",
+        "owner-1",
+        {
+            "account_id": "acct-1",
+            "alias": "acct-1",
+            "provider": "mock",
+            "connected": True,
+            "enabled": True,
+            "allow_allocation": True,
+        },
+        record_id="acct-1",
+    )
+    service = InstanceService(repo, clock=lambda: now[0], config=cfg)
+    provider = MockColabProvider(fail_delete_times=1)
+    seen_accounts = []
+
+    def provider_factory(job):
+        seen_accounts.append((job.get("id"), job.get("account_id")))
+        if job.get("account_id") != "acct-1":
+            raise ComputeError("Google OAuth未连接，真实GPU能力已关闭")
+        return provider
+
+    scheduler = Scheduler(
+        repo,
+        provider_factory=provider_factory,
+        executor_factory=lambda _: MockGPUExecutor(),
+        config=cfg,
+        instance_service=service,
+        clock=lambda: now[0],
+    )
+
+    def submit_job(key: str, lifecycle: str = "retain"):
+        return repo.create_job(
+            "owner-1",
+            {
+                "provider": "mock",
+                "project_id": "project-1",
+                "compatibility_signature": "sig-l4",
+                "max_runtime_minutes": 30,
+                "snapshot": {"manifest": {"mock": True}},
+                "execution_policy": {
+                    "provider": "mock",
+                    "lifecycle": lifecycle,
+                    "max_runtime_minutes": 30,
+                    "retain_idle_minutes": 15,
+                },
+                "estimated_units": 0,
+            },
+            key,
+        )[0]
+
+    j1 = submit_job("evening-job", lifecycle="retain")
+    r1 = run_to_terminal(scheduler, repo, j1["id"])
+    assert r1["state"] == "completed"
+    old_instance_id = r1["instance_id"]
+    old_lease_id = r1["lease_id"]
+    old_inst = service.get("owner-1", old_instance_id)
+    assert old_inst["state"] == "retained_idle"
+    assert old_inst["hard_deadline_at"] == 1_000.0 + 120 * 60
+
+    # Idle expires: first cleanup fails delete -> lease moves to cleanup_pending
+    # while instance stays retained_idle, and account_id is passed.
+    now[0] = old_inst["idle_deadline_at"] + 1.0
+    scheduler.watchdog()
+    failed_lease = repo.get("leases", old_lease_id, "owner-1")
+    assert failed_lease["state"] == "cleanup_pending"
+    assert ("evening-job", "acct-1") in seen_accounts or any(
+        acct == "acct-1" for _, acct in seen_accounts
+    )
+
+    # Next morning (well past yesterday's hard_deadline_at): a new job must not
+    # reuse the expired/cleanup_pending instance or inherit its stale deadline.
+    now[0] = old_inst["hard_deadline_at"] + 6 * 3600.0
+    j2 = submit_job("morning-job", lifecycle="save")
+    r2 = run_to_terminal(scheduler, repo, j2["id"])
+    assert r2["state"] == "completed"
+    assert r2["instance_id"] != old_instance_id
+    assert r2["deadline_epoch"] == now[0] + 30 * 60
+
+    # Watchdog retries the still-stuck retained_idle + cleanup_pending lease
+    # without getting wedged by claim_orphan_lease and converges both to deleted.
+    scheduler.watchdog()
+    assert service.get("owner-1", old_instance_id)["state"] == "deleted"
+    assert repo.get("leases", old_lease_id, "owner-1")["state"] == "deleted"
+
+    # Also verify an orphan cleanup_pending lease whose instance is already deleted
+    # converges to deleted instead of looping forever in claim_orphan_lease.
+    req_id = str(uuid.uuid4())
+    rt_id = "rt-already-deleted-inst"
+    provider.create({"provider": "mock"}, req_id, "job-dead", rt_id)
+    dead_inst = repo.create(
+        "instances",
+        "owner-1",
+        {
+            "account_id": "acct-1",
+            "provider": "mock",
+            "state": "deleted",
+            "lease_id": "lease-successor",
+        },
+        record_id="inst-already-deleted",
+    )
+    orphan_lease = repo.create(
+        "leases",
+        "owner-1",
+        {
+            "owner_job_id": "job-dead",
+            "provider": "mock",
+            "account_id": "acct-1",
+            "instance_id": dead_inst["id"],
+            "state": "cleanup_pending",
+            "request_id": req_id,
+            "runtime_id": rt_id,
+            "cleanup_next_epoch": 0.0,
+            "handle": {
+                "runtime_name": f"mock-runtime-{rt_id}",
+                "runtime_id": rt_id,
+                "request_id": req_id,
+                "job_id": "job-dead",
+                "owner_job_id": "job-dead",
+            },
+        },
+    )
+    scheduler.watchdog()
+    done_orphan = repo.get("leases", orphan_lease["id"], "owner-1")
+    assert done_orphan["state"] == "deleted"
+    assert done_orphan["remote_delete_source"] == "orphan_cleanup_provider_confirmation"

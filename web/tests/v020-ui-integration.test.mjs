@@ -158,3 +158,16 @@ test('settings and compute render read-only real retention verification badge', 
     else globalThis.window = prevWindow;
   }
 });
+
+test('App refreshes reference images across tab switch and completed jobs without clearing selectedAssets', () => {
+  const source = read('App.tsx');
+  assert.match(source, /const completedJobsKey = useMemo\(/);
+  assert.match(
+    source,
+    /useEffect\(\(\) => \{\s*setReferenceImages\(\[\]\);\s*setSelectedAssets\(\[\]\);\s*\}, \[projectId, loggedIn\]\);/
+  );
+  assert.match(
+    source,
+    /getReferenceAssets\(projectId\)[\s\S]*\[projectId, loggedIn, tab, completedJobsKey\]/
+  );
+});

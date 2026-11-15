@@ -396,3 +396,70 @@ def test_retained_instance_refreshes_idle_deadline_on_subsequent_job_completion(
     assert second_done["state"] == "retained_idle"
     assert second_done["idle_deadline_at"] == 2000.0 + 30 * 60
 
+
+def test_expired_or_non_idle_lease_retained_instance_is_not_reused(repo):
+    now = [100.0]
+    account(repo)
+    service = InstanceService(repo, clock=lambda: now[0], config={"max_idle_minutes": 30, "max_runtime_minutes": 120})
+    j1 = job(
+        job_id="job-1",
+        lifecycle="retain",
+        execution_policy={"provider": "mock", "lifecycle": "retain", "retain_idle_minutes": 15},
+    )
+    inst = service.allocate(j1)
+    done = service.complete(j1, success=True)
+    assert done["state"] == "retained_idle"
+    assert done["idle_deadline_at"] == 100.0 + 15 * 60
+
+    # Once idle_deadline_at has passed, explicit reuse fails and auto allocate creates fresh instance.
+    now[0] = done["idle_deadline_at"]
+    with pytest.raises(InstanceConflict):
+        service.allocate(job(job_id="job-explicit-expired", requested_instance_id=inst["id"]))
+    fresh = service.allocate(job(job_id="job-auto-after-idle-expiry"))
+    assert fresh["id"] != inst["id"]
+    assert fresh["hard_deadline_at"] == now[0] + 120 * 60
+
+    # Even before idle_deadline_at, a non-idle (cleanup_pending) lease fences reuse.
+    now[0] = 500.0
+    lease = repo.create(
+        "leases",
+        "owner-1",
+        {"state": "cleanup_pending", "instance_id": "inst-dead-lease", "account_id": "acct-1"},
+        record_id="lease-dead",
+    )
+    dead_lease_inst = repo.create(
+        "instances",
+        "owner-1",
+        {
+            "account_id": "acct-1",
+            "provider": "mock",
+            "state": "retained_idle",
+            "current_job_id": None,
+            "lease_id": lease["id"],
+            "compatibility_signature": "compat-v1",
+            "idle_deadline_at": 2000.0,
+            "hard_deadline_at": 5000.0,
+        },
+        record_id="inst-dead-lease",
+    )
+    fresh2 = service.allocate(job(job_id="job-auto-dead-lease"))
+    assert fresh2["id"] not in {inst["id"], dead_lease_inst["id"]}
+
+    # Once hard_deadline_at has passed, even an idle instance without idle_deadline_at is skipped.
+    stale_hard = repo.create(
+        "instances",
+        "owner-1",
+        {
+            "account_id": "acct-1",
+            "provider": "mock",
+            "state": "retained_idle",
+            "current_job_id": None,
+            "compatibility_signature": "compat-v1",
+            "hard_deadline_at": 400.0,
+        },
+        record_id="inst-stale-hard",
+    )
+    fresh3 = service.allocate(job(job_id="job-auto-stale-hard"))
+    assert fresh3["id"] not in {inst["id"], dead_lease_inst["id"], stale_hard["id"]}
+    assert fresh3["hard_deadline_at"] == now[0] + 120 * 60
+

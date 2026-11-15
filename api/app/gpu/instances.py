@@ -360,13 +360,41 @@ class InstanceService:
         self._set(cursor, data, state="active", session=session)
         return selected
 
-    def _compatible(self, instance, job, account_id):
+    def _is_reusable_idle(self, session, instance) -> bool:
+        data = self._data(instance)
+        now = float(self.clock())
+        if data.get("current_job_id") is not None or instance.state not in self._IDLE_STATES:
+            return False
+        if data.get("manual_stop_requested") or data.get("cleanup_claim_token"):
+            return False
+        hard = data.get("hard_deadline_at")
+        if hard is not None and now >= float(hard):
+            return False
+        if instance.state == "retained_idle":
+            idle = data.get("idle_deadline_at")
+            if idle is not None and now >= float(idle):
+                return False
+        lease_id = data.get("lease_id")
+        if session is not None and lease_id:
+            try:
+                lease_row = self._find(session, "leases", lease_id, instance.owner_id)
+            except ValueError:
+                lease_row = None
+            if lease_row is not None:
+                if lease_row.state != "idle":
+                    return False
+                lease_data = self._data(lease_row)
+                for field in ("idle_deadline_at", "deadline_epoch", "hard_deadline_at"):
+                    limit = lease_data.get(field)
+                    if limit is not None and now >= float(limit):
+                        return False
+        return True
+
+    def _compatible(self, instance, job, account_id, session=None):
         data = self._data(instance)
         if self._value(data, "account_id") != account_id:
             return False
-        if data.get("current_job_id") is not None:
-            return False
-        if instance.state not in self._IDLE_STATES:
+        if not self._is_reusable_idle(session, instance):
             return False
         signature = job.get("compatibility_signature")
         return not signature or data.get("compatibility_signature") == signature
@@ -478,7 +506,11 @@ class InstanceService:
                 if requested_account and data.get("account_id") != account_id:
                     raise AllocationError("指定实例与账号冲突")
                 account = next((a for a in accounts if self._account_id(a) == data.get("account_id")), None)
-                if account is None or not self._compatible(instance, job, self._account_id(account)):
+                compatible = (
+                    account is not None
+                    and self._compatible(instance, job, self._account_id(account), session=session)
+                )
+                if not compatible:
                     raise InstanceConflict("指定实例不兼容或已被占用")
                 units = self._reserve_budget(session, job, account, provider)
                 return self._claim_existing(session, instance, job, account, key, stable_id, "requested_instance", units)
@@ -487,9 +519,19 @@ class InstanceService:
             idle = [r for r in self._rows(session, "instances", owner_id) if r.id != stable_id and r.state not in {"unknown", "cleanup_pending"}]
             if requested_account:
                 account = accounts[0]
-                candidates = [r for r in idle if self._compatible(r, job, self._account_id(account))]
+                acct_id = self._account_id(account)
+                candidates = [
+                    r for r in idle if self._compatible(r, job, acct_id, session=session)
+                ]
             else:
-                candidates = [r for r in idle if any(self._compatible(r, job, self._account_id(a)) for a in accounts)]
+                candidates = [
+                    r
+                    for r in idle
+                    if any(
+                        self._compatible(r, job, self._account_id(a), session=session)
+                        for a in accounts
+                    )
+                ]
                 account = None
                 if candidates:
                     selected = sorted(candidates, key=lambda r: r.updated_at or r.created_at, reverse=True)[0]

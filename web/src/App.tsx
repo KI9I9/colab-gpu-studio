@@ -277,6 +277,14 @@ export default function App() {
     return jobs.filter((j) => !terminalStates.has(String(j.state || '').toLowerCase())).length;
   }, [jobs]);
 
+  const completedJobsKey = useMemo(() => {
+    return jobs
+      .filter((j) => j.project_id === projectId && String(j.state || '').toLowerCase() === 'completed')
+      .map((j) => j.id)
+      .sort()
+      .join(',');
+  }, [jobs, projectId]);
+
   useEffect(() => {
     const expire = () => setLoggedIn(false);
     window.addEventListener('gpu-auth-expired', expire);
@@ -423,7 +431,10 @@ export default function App() {
   useEffect(() => {
     setReferenceImages([]);
     setSelectedAssets([]);
-    if (!projectId || !loggedIn) return;
+  }, [projectId, loggedIn]);
+
+  useEffect(() => {
+    if (!projectId || !loggedIn || tab !== '创作') return;
     let alive = true;
     getReferenceAssets(projectId).then((next) => {
       if (alive) setReferenceImages(referenceAssets(next));
@@ -431,7 +442,7 @@ export default function App() {
       if (alive) setError(`素材：${apiMessage(cause)}`);
     });
     return () => { alive = false; };
-  }, [projectId, loggedIn]);
+  }, [projectId, loggedIn, tab, completedJobsKey]);
 
   useEffect(() => {
     setSelectedAssets([]);
